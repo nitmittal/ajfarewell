@@ -9,7 +9,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 // 4. Paste it below:
 // ============================================================
 
-const NPOINT_ID = "f04ee30835f7bebf83c6"; // e.g. "a1b2c3d4e5f6"
+const NPOINT_ID = "YOUR_NPOINT_ID_HERE"; // e.g. "a1b2c3d4e5f6"
 
 // ============================================================
 
@@ -101,53 +101,104 @@ export default function App() {
     await saveData({ entries: ents, name: n || name });
   };
 
+  const [uploadError, setUploadError] = useState("");
+
   const handleImg = (e) => {
     const f = e.target.files[0];
     if (!f) return;
+    setUploadError("");
+
+    // Validate file type
+    if (!f.type.startsWith("image/")) {
+      setUploadError("Please select an image file.");
+      return;
+    }
+
+    // Validate file size (max 5MB input)
+    if (f.size > 5 * 1024 * 1024) {
+      setUploadError("Image too large. Please use an image under 5MB.");
+      return;
+    }
+
     const reader = new FileReader();
+    reader.onerror = () => setUploadError("Failed to read the file. Please try again.");
     reader.onload = (ev) => {
-      const image = new Image();
-      image.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX = 800;
-        let w = image.width, h = image.height;
-        if (w > MAX || h > MAX) {
-          if (w > h) { h = h * MAX / w; w = MAX; } else { w = w * MAX / h; h = MAX; }
-        }
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        // Fill white background first (handles PNG transparency)
-        ctx.fillStyle = "#FFFFFF";
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(image, 0, 0, w, h);
-        const compressed = canvas.toDataURL("image/jpeg", 0.7);
-        setImg(compressed); setImgPrev(compressed);
-      };
-      image.onerror = () => {
-        // Fallback: use the raw file data without compression
-        setImg(ev.target.result); setImgPrev(ev.target.result);
-      };
-      image.src = ev.target.result;
+      const rawDataUrl = ev.target.result;
+
+      // Try to compress via canvas
+      try {
+        const image = new window.Image();
+        image.crossOrigin = "anonymous";
+        image.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            const MAX = 600;
+            let w = image.naturalWidth || image.width;
+            let h = image.naturalHeight || image.height;
+            if (w > MAX || h > MAX) {
+              if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+              else { w = Math.round(w * MAX / h); h = MAX; }
+            }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(image, 0, 0, w, h);
+            const compressed = canvas.toDataURL("image/jpeg", 0.5);
+            setImg(compressed);
+            setImgPrev(compressed);
+          } catch (err) {
+            console.warn("Canvas compression failed, using original:", err);
+            setImg(rawDataUrl);
+            setImgPrev(rawDataUrl);
+          }
+        };
+        image.onerror = () => {
+          console.warn("Image decode failed, using raw data URL");
+          setImg(rawDataUrl);
+          setImgPrev(rawDataUrl);
+        };
+        image.src = rawDataUrl;
+      } catch (err) {
+        console.warn("Image processing failed entirely:", err);
+        setImg(rawDataUrl);
+        setImgPrev(rawDataUrl);
+      }
     };
     reader.readAsDataURL(f);
   };
 
+  const [saveError, setSaveError] = useState("");
+
   const handleSubmit = async () => {
     if (!note.trim() && !img) return;
     setSaving(true);
+    setSaveError("");
     const entry = {
       id: Date.now() + "_" + Math.random().toString(36).slice(2,8),
       image: img, author: author.trim() || "Anonymous",
       note: note.trim(), timestamp: new Date().toISOString(),
       rotation: randRot(), tapeColor: randTape(), hearts: 0,
     };
-    // Re-fetch to merge
-    const current = await loadData();
-    const updated = [...(current.entries || []), entry];
-    await persist(updated);
-    setEntries(updated);
-    setAuthor(""); setNote(""); setImg(null); setImgPrev(null);
-    setShowModal(false); setSaving(false);
+    try {
+      // Re-fetch to merge
+      const current = await loadData();
+      const updated = [...(current.entries || []), entry];
+      await persist(updated);
+      setEntries(updated);
+      setAuthor(""); setNote(""); setImg(null); setImgPrev(null); setUploadError("");
+      setShowModal(false);
+    } catch (err) {
+      console.error("Save failed:", err);
+      // If save failed due to size, try again without image
+      if (img) {
+        setSaveError("Image too large to save. Try a smaller photo, or submit with just a note.");
+      } else {
+        setSaveError("Failed to save. Please try again.");
+      }
+    }
+    setSaving(false);
   };
 
   const handleHeart = async (id) => {
@@ -352,7 +403,8 @@ export default function App() {
             </div>
             <div className="fg">
               <label className="fl">Photo (optional)</label>
-              <input type="file" accept="image/*" ref={fileRef} onChange={handleImg} style={{display:"none"}}/>
+              <input type="file" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/heic" ref={fileRef} onChange={handleImg} style={{display:"none"}}/>
+              {uploadError && <div style={{color:"#c44",fontFamily:"'Lora',serif",fontSize:".85rem",marginBottom:8}}>{uploadError}</div>}
               {imgPrev ? (
                 <div style={{position:"relative"}}>
                   <img src={imgPrev} alt="Preview" className="uprev"/>
@@ -371,8 +423,9 @@ export default function App() {
               <textarea className="fi fta" value={note} onChange={e=>setNote(e.target.value)}
                 placeholder="Write your favorite memory, a wish, or anything from the heart..."/>
             </div>
+            {saveError && <div style={{color:"#c44",fontFamily:"'Lora',serif",fontSize:".85rem",marginBottom:8,textAlign:"center"}}>{saveError}</div>}
             <div className="btnrow">
-              <button className="btnc" onClick={()=>{setShowModal(false);setImg(null);setImgPrev(null)}}>Cancel</button>
+              <button className="btnc" onClick={()=>{setShowModal(false);setImg(null);setImgPrev(null);setUploadError("");setSaveError("")}}>Cancel</button>
               <button className="btns" disabled={(!note.trim()&&!img)||saving} onClick={handleSubmit}>
                 {saving ? "Saving..." : "Add to Scrapbook"}
               </button>
