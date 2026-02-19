@@ -1,35 +1,30 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 
 // ============================================================
-// STORAGE CONFIG — Choose your backend
+// STORAGE CONFIG — npoint.io (free, no signup required)
 // ============================================================
-// OPTION 1: JSONBin.io (FREE, recommended for quick setup)
-//   1. Go to https://jsonbin.io and sign up (free)
-//   2. Create a new bin with content: {"entries":[],"name":"Our Amazing Colleague"}
-//   3. Copy your Bin ID and API key below
-//
-// OPTION 2: localStorage only (no shared state — each person sees only their own entries)
-//   Set USE_JSONBIN = false
+// 1. Go to https://www.npoint.io
+// 2. Paste this JSON:  {"entries":[],"name":"Our Amazing Colleague"}
+// 3. Click Save → copy the ID from the URL (e.g. "abc123def456")
+// 4. Paste it below:
 // ============================================================
 
-const USE_JSONBIN = false; // Set to true after adding your JSONBin credentials
-const JSONBIN_ID = "YOUR_BIN_ID_HERE"; // e.g. "65a1b2c3d4e5f6a7b8c9d0e1"
-const JSONBIN_API_KEY = "YOUR_API_KEY_HERE"; // e.g. "$2a$10$..."
+const NPOINT_ID = "YOUR_NPOINT_ID_HERE"; // e.g. "a1b2c3d4e5f6"
 
 // ============================================================
 
+const NPOINT_URL = `https://api.npoint.io/${NPOINT_ID}`;
+const USE_NPOINT = NPOINT_ID !== "YOUR_NPOINT_ID_HERE";
 const STORAGE_KEY = "farewell_scrapbook_data";
 
 async function loadData() {
-  if (USE_JSONBIN) {
+  if (USE_NPOINT) {
     try {
-      const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_ID}/latest`, {
-        headers: { "X-Master-Key": JSONBIN_API_KEY },
-      });
-      const json = await res.json();
-      return json.record || { entries: [], name: "Our Amazing Colleague" };
+      const res = await fetch(NPOINT_URL);
+      const data = await res.json();
+      return data || { entries: [], name: "Our Amazing Colleague" };
     } catch (e) {
-      console.error("JSONBin load failed, falling back to localStorage", e);
+      console.error("npoint load failed, falling back to localStorage", e);
     }
   }
   try {
@@ -40,18 +35,15 @@ async function loadData() {
 
 async function saveData(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  if (USE_JSONBIN) {
+  if (USE_NPOINT) {
     try {
-      await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_ID}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Master-Key": JSONBIN_API_KEY,
-        },
+      await fetch(NPOINT_URL, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
     } catch (e) {
-      console.error("JSONBin save failed", e);
+      console.error("npoint save failed", e);
     }
   }
 }
@@ -276,10 +268,10 @@ export default function App() {
         {!loading && <button className="refresh-btn" onClick={refresh}><RefreshIcon/> Refresh</button>}
       </div>
 
-      {!loading && !USE_JSONBIN && (
+      {!loading && !USE_NPOINT && (
         <div className="setup-banner">
           <strong>Local mode:</strong> Entries are stored in each browser separately.
-          To share across your team, set up <a href="https://jsonbin.io" target="_blank" rel="noopener">JSONBin.io</a> (free) —
+          To share across your team, set up <a href="https://www.npoint.io" target="_blank" rel="noopener">npoint.io</a> (free, no signup) —
           see instructions in <code>src/App.jsx</code> at the top.
         </div>
       )}
