@@ -9,7 +9,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 // 4. Paste it below:
 // ============================================================
 
-const NPOINT_ID = "f04ee30835f7bebf83c6"; // e.g. "a1b2c3d4e5f6"
+const NPOINT_ID = "YOUR_NPOINT_ID_HERE"; // e.g. "a1b2c3d4e5f6"
 
 // ============================================================
 
@@ -115,9 +115,17 @@ export default function App() {
           if (w > h) { h = h * MAX / w; w = MAX; } else { w = w * MAX / h; h = MAX; }
         }
         canvas.width = w; canvas.height = h;
-        canvas.getContext("2d").drawImage(image, 0, 0, w, h);
+        const ctx = canvas.getContext("2d");
+        // Fill white background first (handles PNG transparency)
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(image, 0, 0, w, h);
         const compressed = canvas.toDataURL("image/jpeg", 0.7);
         setImg(compressed); setImgPrev(compressed);
+      };
+      image.onerror = () => {
+        // Fallback: use the raw file data without compression
+        setImg(ev.target.result); setImgPrev(ev.target.result);
       };
       image.src = ev.target.result;
     };
