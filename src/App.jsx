@@ -9,7 +9,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 // 4. Paste it below:
 // ============================================================
 
-const NPOINT_ID = "YOUR_NPOINT_ID_HERE"; // e.g. "a1b2c3d4e5f6"
+const NPOINT_ID = "f04ee30835f7bebf83c6"; // e.g. "a1b2c3d4e5f6"
 
 // ============================================================
 
