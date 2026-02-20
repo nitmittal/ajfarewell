@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import heic2any from "heic2any";
 
 // ============================================================
 // STORAGE CONFIG — npoint.io (free, no signup required)
@@ -9,7 +10,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 // 4. Paste it below:
 // ============================================================
 
-const NPOINT_ID = "f04ee30835f7bebf83c6"; // e.g. "a1b2c3d4e5f6"
+const NPOINT_ID = "YOUR_NPOINT_ID_HERE"; // e.g. "a1b2c3d4e5f6"
 
 // ============================================================
 
@@ -103,70 +104,95 @@ export default function App() {
 
   const [uploadError, setUploadError] = useState("");
 
-  const handleImg = (e) => {
+  // Detect HEIC by checking file bytes (iPhones often label HEIC as .jpeg)
+  const isHeic = (dataUrl) => {
+    try {
+      const b64 = dataUrl.split(",")[1] || "";
+      const first32 = atob(b64.slice(0, 44)); // decode ~32 bytes
+      return first32.includes("ftyp") && (first32.includes("heic") || first32.includes("heix") || first32.includes("hevc") || first32.includes("mif1"));
+    } catch { return false; }
+  };
+
+  const compressToDataUrl = (imageSrc) => {
+    return new Promise((resolve) => {
+      const image = new window.Image();
+      image.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          const MAX = 600;
+          let w = image.naturalWidth || image.width;
+          let h = image.naturalHeight || image.height;
+          if (w > MAX || h > MAX) {
+            if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+            else { w = Math.round(w * MAX / h); h = MAX; }
+          }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(image, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", 0.5));
+        } catch {
+          resolve(imageSrc);
+        }
+      };
+      image.onerror = () => resolve(imageSrc);
+      image.src = imageSrc;
+    });
+  };
+
+  const handleImg = async (e) => {
     const f = e.target.files[0];
     if (!f) return;
     setUploadError("");
 
-    // Validate file type
-    if (!f.type.startsWith("image/")) {
-      setUploadError("Please select an image file.");
+    if (f.size > 10 * 1024 * 1024) {
+      setUploadError("Image too large. Please use an image under 10MB.");
       return;
     }
 
-    // Validate file size (max 5MB input)
-    if (f.size > 5 * 1024 * 1024) {
-      setUploadError("Image too large. Please use an image under 5MB.");
-      return;
-    }
+    try {
+      // First read the file to check if it's really HEIC
+      const rawDataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target.result);
+        reader.onerror = () => reject(new Error("Could not read file"));
+        reader.readAsDataURL(f);
+      });
 
-    const reader = new FileReader();
-    reader.onerror = () => setUploadError("Failed to read the file. Please try again.");
-    reader.onload = (ev) => {
-      const rawDataUrl = ev.target.result;
+      let processableDataUrl = rawDataUrl;
 
-      // Try to compress via canvas
-      try {
-        const image = new window.Image();
-        image.crossOrigin = "anonymous";
-        image.onload = () => {
-          try {
-            const canvas = document.createElement("canvas");
-            const MAX = 600;
-            let w = image.naturalWidth || image.width;
-            let h = image.naturalHeight || image.height;
-            if (w > MAX || h > MAX) {
-              if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-              else { w = Math.round(w * MAX / h); h = MAX; }
-            }
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext("2d");
-            ctx.fillStyle = "#FFFFFF";
-            ctx.fillRect(0, 0, w, h);
-            ctx.drawImage(image, 0, 0, w, h);
-            const compressed = canvas.toDataURL("image/jpeg", 0.5);
-            setImg(compressed);
-            setImgPrev(compressed);
-          } catch (err) {
-            console.warn("Canvas compression failed, using original:", err);
-            setImg(rawDataUrl);
-            setImgPrev(rawDataUrl);
-          }
-        };
-        image.onerror = () => {
-          console.warn("Image decode failed, using raw data URL");
-          setImg(rawDataUrl);
-          setImgPrev(rawDataUrl);
-        };
-        image.src = rawDataUrl;
-      } catch (err) {
-        console.warn("Image processing failed entirely:", err);
-        setImg(rawDataUrl);
-        setImgPrev(rawDataUrl);
+      // Check if it's HEIC disguised as jpeg (common on iPhones)
+      if (isHeic(rawDataUrl) || f.type === "image/heic" || f.type === "image/heif" || f.name.toLowerCase().endsWith(".heic")) {
+        setUploadError("Converting iPhone photo format...");
+        try {
+          // Convert HEIC blob to JPEG blob
+          const blob = f; // use original file blob
+          const jpegBlob = await heic2any({ blob, toType: "image/jpeg", quality: 0.6 });
+          const convertedBlob = Array.isArray(jpegBlob) ? jpegBlob[0] : jpegBlob;
+          processableDataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => resolve(ev.target.result);
+            reader.onerror = () => reject(new Error("Could not read converted file"));
+            reader.readAsDataURL(convertedBlob);
+          });
+          setUploadError("");
+        } catch (heicErr) {
+          console.error("HEIC conversion failed:", heicErr);
+          setUploadError("Could not convert iPhone photo. Try screenshotting the photo first, or use a JPEG/PNG export.");
+          return;
+        }
       }
-    };
-    reader.readAsDataURL(f);
+
+      // Now compress via canvas
+      const compressed = await compressToDataUrl(processableDataUrl);
+      setImg(compressed);
+      setImgPrev(compressed);
+    } catch (err) {
+      console.error("Image upload error:", err);
+      setUploadError("Failed to process image: " + err.message);
+    }
   };
 
   const [saveError, setSaveError] = useState("");
